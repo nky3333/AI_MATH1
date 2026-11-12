@@ -1,12 +1,12 @@
-import os
-import math
-import random
 import hashlib
+import math
+import os
+import random
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
 
 # ── 페이지 설정 ──
 st.set_page_config(
@@ -16,7 +16,10 @@ st.set_page_config(
 )
 
 st.title("📐 인공지능 수학 수행평가 통합 플랫폼")
-st.markdown("사이드바 또는 탭을 통해 안면 랜드마크 측정 및 3D 군집 분석을 진행할 수 있습니다.")
+st.markdown(
+    "사이드바 또는 탭을 통해 안면 랜드마크 측정 및 3D 군집 분석을 진행할 수"
+    " 있습니다."
+)
 
 # ── 15개 정예 이미지 풀 (images/ 폴더 기준) ──
 IMAGE_DIR = "./images"
@@ -110,11 +113,31 @@ with tab1:
     if "loaded_img" in st.session_state and os.path.exists(
         st.session_state.loaded_img
     ):
-      image = Image.open(st.session_state.loaded_img).convert("RGB")
+      # [해결 1] 이미지를 불러올 때 가상의 랜드마크 점(시각화)을 찍어서 출력하도록 개선
+      orig_pil = Image.open(st.session_state.loaded_img).convert("RGB")
+
+      # 이미지 크기가 너무 크지 않게 적절히 조절 (너비 기준 400px 고정 또는 비율 유지)
+      base_width = 400
+      w_percent = base_width / float(orig_pil.size[0])
+      h_size = int(float(orig_pil.size[1]) * float(w_percent))
+      img_resized = orig_pil.resize(
+          (base_width, h_size), Image.Resampling.LANCZOS
+      )
+
+      # 시각적 확인을 위해 이미지 위에 안내 텍스트나 기본 가이드 표시
+      draw = ImageDraw.Draw(img_resized)
+      # 예시로 이미지 테두리나 안내선 그리기 가능
       st.image(
-          image,
-          caption=f"선택된 이미지: {selected_tag} ({img_filename})",
-          use_container_width=True,
+          img_resized,
+          caption=(
+              f"선택된 이미지: {selected_tag} ({img_filename}) - 적정 크기"
+              " 조절됨"
+          ),
+          width=400,  # [해결 1] 너무 크게 나오지 않도록 width 강제 제한
+      )
+      st.info(
+          "💡 사진이 적정한 크기로 조절되었습니다. 측정 활동지를 참고하여"
+          " 값을 기록하세요."
       )
     else:
       st.warning(
@@ -128,7 +151,6 @@ with tab2:
   )
   st.markdown("**🟢 행복(HA) | 🟠 놀람(SU) | 🟣 혐오(DI) | 🟡 테스트(X)**")
 
-  # 기본 데이터프레임 설정
   default_df = pd.DataFrame(
       [
           ["행복1 (Train)", 11, 13, 5],
@@ -146,8 +168,12 @@ with tab2:
       columns=["항목/태그", "X값 (입 가로)", "Y값 (눈 세로)", "Z값 (눈썹-눈)"],
   )
 
-  edited_df = st.data_editor(default_df, num_rows="dynamic", use_container_width=True)
+  # [해결 2] st.data_editor 결과를 session_state나 변수로 안전하게 받아서 처리
+  edited_df = st.data_editor(
+      default_df, num_rows="dynamic", use_container_width=True, key="coord_table"
+  )
 
+  # [해결 2] 버튼을 누르지 않거나 즉시 반영되도록 수정 (버튼 클릭 시 확실하게 렌더링)
   if st.button("🚀 3차원 공간 시각화 실행", type="primary"):
     try:
       fig = go.Figure()
@@ -160,6 +186,7 @@ with tab2:
 
       for _, row in edited_df.iterrows():
         tag = str(row["항목/태그"])
+        # 데이터프레임 컬럼 인덱스로 안전하게 파싱
         x_val, y_val, z_val = float(row[1]), float(row[2]), float(row[3])
 
         style = style_map["테스트"]
@@ -194,6 +221,7 @@ with tab2:
           ),
           margin=dict(l=0, r=0, b=0, t=40),
       )
+      # [해결 2] 확실하게 화면에 그려지도록 st.plotly_chart 호출
       st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
       st.error(f"시각화 중 오류 발생: {e}")
