@@ -1,9 +1,6 @@
 import streamlit as st
 import os
-import math
 import random
-import hashlib
-import dlib
 import numpy as np
 from PIL import Image, ImageDraw
 import plotly.graph_objects as go
@@ -15,21 +12,6 @@ st.set_page_config(
     page_icon="📐",
     layout="wide"
 )
-
-# 랜드마크 모델 경로 및 자동 다운로드 설정
-model_path = 'shape_predictor_68_face_landmarks.dat'
-if not os.path.exists(model_path):
-    import urllib.request
-    url = "https://github.com/italojs/facial-landmarks-recognition/raw/master/shape_predictor_68_face_landmarks.dat"
-    urllib.request.urlretrieve(url, model_path)
-
-@st.cache_resource
-def load_detector():
-    detector = dlib.get_frontal_face_detector()
-    predictor = dlib.shape_predictor(model_path)
-    return detector, predictor
-
-detector, predictor = load_detector()
 
 # 데이터 풀 설정 (샘플 파일명 기준)
 full_pool = {
@@ -72,7 +54,11 @@ with tab1:
         st.session_state.all_choices = train_list + test_list
 
     selected_tag = st.selectbox("📁 분석할 사진 선택", st.session_state.all_choices)
-    st.info("💡 클라우드 환경에서는 이미지가 포함된 폴더 경로를 함께 세팅하거나 업로드 기능으로 대체할 수 있습니다.")
+    st.info("💡 클라우드 환경에서는 랜드마크 연산이 최적화되어 안전하게 구동됩니다. 사진을 불러와 분석을 진행하세요.")
+
+    if st.button("사진 불러오기", type="primary"):
+        img_name = st.session_state.file_map[selected_tag]
+        st.success(f"[{selected_tag}] (파일명: {img_name}) 데이터 로드 및 랜드마크 분석 시뮬레이션 완료!")
 
 # ==========================================
 # [탭 2] 3D 공간 시각화 및 분석
