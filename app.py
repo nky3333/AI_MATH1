@@ -20,26 +20,32 @@ st.set_page_config(
 )
 
 st.title("📐 인공지능 수학 수행평가 통합 플랫폼")
-st.markdown("안면 랜드마크 직접 측정 및 3D 군집 분석 통합 플랫폼입니다.")
+st.markdown(
+    "안면 랜드마크 자동 검출 및 변수 측정, 3D 군집 분석 통합 플랫폼입니다."
+)
 
 # ── dlib 랜드마크 모델 자동 다운로드 및 초기화 ──
 MODEL_FILE = "shape_predictor_68_face_landmarks.dat"
 if not os.path.exists(MODEL_FILE):
-  with st.spinner("📥 랜드마크 모델 파일을 다운로드 중입니다 (약 99MB)..."):
+  with st.spinner(
+      "📥 랜드마크 모델 파일을 다운로드 중입니다 (약 99MB, 잠시만"
+      " 기다려주세요)..."
+  ):
     url = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
     urllib.request.urlretrieve(url, MODEL_FILE + ".bz2")
     with bz2.BZ2File(MODEL_FILE + ".bz2") as fr, open(MODEL_FILE, "wb") as fw:
       fw.write(fr.read())
     os.remove(MODEL_FILE + ".bz2")
 
+
 @st.cache_resource
-def load_dlib_tools():
+def load_dlib_model():
   detector = dlib.get_frontal_face_detector()
   predictor = dlib.shape_predictor(MODEL_FILE)
   return detector, predictor
 
 
-detector, predictor = load_dlib_tools()
+detector, predictor = load_dlib_model()
 
 # ── 15개 정예 이미지 풀 (images/ 폴더 기준) ──
 IMAGE_DIR = "./images"
@@ -107,6 +113,52 @@ if "points" not in st.session_state:
 if "current_image_tag" not in st.session_state:
   st.session_state.current_image_tag = None
 
+# ── 랜드마크 시각화 함수 (코랩 코드 반영) ──
+def draw_landmarks_on_image(base_img, lm_coords, selected_points):
+  img_copy = base_img.copy()
+  draw = ImageDraw.Draw(img_copy)
+
+  # 68개 전체 랜드마크 하얀색 점 표시
+  for idx, (px, py) in enumerate(lm_coords):
+    r = 4.0
+    draw.ellipse(
+        [px - r, py - r, px + r, py + r], fill="white", outline="black", width=1
+    )
+
+  colors = ["red", "yellow", "blue"]
+
+  # 선택된 점들 강조
+  for i, pt in enumerate(selected_points):
+    px, py = pt[1], pt[2]
+    r = 7.0
+    color_idx = i // 2
+    c = colors[color_idx] if color_idx < 3 else "white"
+    draw.ellipse(
+        [px - r, py - r, px + r, py + r], fill=c, outline="white", width=2
+    )
+
+  # 측정 선 긋기
+  for pair_idx in range(len(selected_points) // 2):
+    p1 = selected_points[pair_idx * 2]
+    p2 = selected_points[pair_idx * 2 + 1]
+    c = colors[pair_idx]
+    draw.line([p1[1], p1[2], p2[1], p2[2]], fill=c, width=4)
+    draw.ellipse(
+        [p1[1] - 6, p1[2] - 6, p1[1] + 6, p1[2] + 6],
+        fill=c,
+        outline="white",
+        width=2,
+    )
+    draw.ellipse(
+        [p2[1] - 6, p2[2] - 6, p2[1] + 6, p2[2] + 6],
+        fill=c,
+        outline="white",
+        width=2,
+    )
+
+  return img_copy
+
+
 # ── 상단 탭 나누기 ──
 tab1, tab2 = st.tabs(
     ["📏 1. 랜드마크 변수 측정기", "📊 2. 3D 공간 시각화 및 분석"]
@@ -134,46 +186,58 @@ with tab1:
       st.session_state.current_image_tag = selected_tag
       st.session_state.points = []
 
-    img_filename = st.session_state.file_map.get(selected_tag)
-    img_path = os.path.join(IMAGE_DIR, img_filename)
-
     if st.button("🔄 선택 초기화", type="secondary"):
       st.session_state.points = []
       st.rerun()
 
     st.markdown("---")
-    st.markdown("### 📊 측정 안내")
+    st.markdown("### 📊 측정 가이드 및 결과")
     pts = st.session_state.points
     n = len(pts)
 
     msg = ""
     if n == 0:
-      msg = "👉 **1단계:** **변수 x (입 가로 폭)** 첫 번째 점을 클릭하세요."
+      msg = (
+          "🔴 **[변수 x]** 입 가로 폭을 측정할 첫 번째 랜드마크 점을"
+          " 클릭하세요."
+      )
     elif n == 1:
-      msg = "👉 **1단계:** **변수 x (입 가로 폭)** 두 번째 점을 클릭하세요."
+      msg = (
+          "🔴 **[변수 x]** 입 가로 폭을 측정할 두 번째 랜드마크 점을"
+          " 클릭하세요."
+      )
     elif n == 2:
-      dx = abs(pts[1][1] - pts[0][1])
-      dy = abs(pts[1][2] - pts[0][2])
+      dx = (pts[1][1] - pts[0][1]) / 2.5
+      dy = (pts[1][2] - pts[0][2]) / 2.5
       dist_x = math.sqrt(dx**2 + dy**2)
-      msg = f"🔴 **변수 x 완료!** ({dist_x:.1f}px)\n👉 **2단계:** **변수 y (눈 세로 폭)** 첫 번째 점을 클릭하세요."
+      msg = f"🔴 **변수 x 완료!** ({dist_x:.1f}px)\n🟡 **[변수 y]** 눈 세로 폭 첫 번째 점을 클릭하세요."
     elif n == 3:
-      msg = "👉 **2단계:** **변수 y (눈 세로 폭)** 두 번째 점을 클릭하세요."
+      msg = "🟡 **[변수 y]** 눈 세로 폭 두 번째 점을 클릭하세요."
     elif n == 4:
-      dx = abs(pts[3][1] - pts[2][1])
-      dy = abs(pts[3][2] - pts[2][2])
+      dx = (pts[3][1] - pts[2][1]) / 2.5
+      dy = (pts[3][2] - pts[2][2]) / 2.5
       dist_y = math.sqrt(dx**2 + dy**2)
-      msg = f"🟡 **변수 y 완료!** ({dist_y:.1f}px)\n👉 **3단계:** **변수 z (눈썹-눈 거리)** 첫 번째 점을 클릭하세요."
+      msg = f"🟡 **변수 y 완료!** ({dist_y:.1f}px)\n🔵 **[변수 z]** 눈썹-눈 거리 첫 번째 점을 클릭하세요."
     elif n == 5:
-      msg = "👉 **3단계:** **변수 z (눈썹-눈 거리)** 두 번째 점을 클릭하세요."
+      msg = "🔵 **[변수 z]** 눈썹-눈 거리 두 번째 점을 클릭하세요."
     elif n >= 6:
-      x_val = math.sqrt(
-          (pts[1][1] - pts[0][1]) ** 2 + (pts[1][2] - pts[0][2]) ** 2
+      x_val = (
+          math.sqrt(
+              (pts[1][1] - pts[0][1]) ** 2 + (pts[1][2] - pts[0][2]) ** 2
+          )
+          / 2.5
       )
-      y_val = math.sqrt(
-          (pts[3][1] - pts[2][1]) ** 2 + (pts[3][2] - pts[2][2]) ** 2
+      y_val = (
+          math.sqrt(
+              (pts[3][1] - pts[2][1]) ** 2 + (pts[3][2] - pts[2][2]) ** 2
+          )
+          / 2.5
       )
-      z_val = math.sqrt(
-          (pts[5][1] - pts[4][1]) ** 2 + (pts[5][2] - pts[4][2]) ** 2
+      z_val = (
+          math.sqrt(
+              (pts[5][1] - pts[4][1]) ** 2 + (pts[5][2] - pts[4][2]) ** 2
+          )
+          / 2.5
       )
       msg = (
           f"🎉 **3가지 변수 측정 완료!**\n"
@@ -183,81 +247,49 @@ with tab1:
           f"✨ **최종 결과값:** x:{x_val:.1f} y:{y_val:.1f} z:{z_val:.1f}"
       )
 
-    st.text_area("측정 상태", value=msg, height=160)
+    st.text_area("진행 상황", value=msg, height=170)
 
   with col2:
+    img_filename = st.session_state.file_map.get(selected_tag)
+    img_path = os.path.join(IMAGE_DIR, img_filename)
+
     if os.path.exists(img_path):
       orig_pil = Image.open(img_path).convert("RGB")
       orig_w, orig_h = orig_pil.size
 
-      # 화면 표시용 스케일 적용 (너비 450px 기준)
-      base_width = 450
-      scale = base_width / float(orig_w)
-      h_size = int(float(orig_h) * float(scale))
-      img_resized = orig_pil.resize(
-          (base_width, h_size), Image.Resampling.LANCZOS
-      )
+      # 코랩 코드와 동일한 2.5배 확대 스케일 적용
+      scale = 2.5
+      new_w, new_h = int(orig_w * scale), int(orig_h * scale)
+      img_resized = orig_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-      # dlib으로 68개 랜드마크 검출
+      # dlib 랜드마크 검출 (코랩 로직 동일)
       faces = detector(np.array(orig_pil), 1)
       lm_coords = []
       if len(faces) > 0:
         shape = predictor(np.array(orig_pil), faces[0])
-        # 리사이즈된 화면 크기에 맞게 좌표 스케일링
         lm_coords = [
             (int(shape.part(i).x * scale), int(shape.part(i).y * scale))
-            for i in range(68]
-        )
+            for i in range(68)
+        ]
 
-      # 이미지 위에 하얀색 점(랜드마크) 및 선택된 측정 점/선 그리기
-      draw_img = img_resized.copy()
-      draw = ImageDraw.Draw(draw_img)
-
-      # 1. 68개 전체 하얀색 점 표시
-      for lx, ly in lm_coords:
-        r = 3.0
-        draw.ellipse(
-            [lx - r, ly - r, lx + r, ly + r],
-            fill="white",
-            outline="black",
-            width=1,
-        )
-
-      # 2. 사용자가 선택한 점들 색상 입히기 (빨강, 노랑, 파랑)
-      colors = ["red", "yellow", "blue"]
-      for i, pt in enumerate(pts):
-        px, py = pt[1], pt[2]
-        color_idx = i // 2
-        c = colors[color_idx] if color_idx < 3 else "white"
-        r = 6
-        draw.ellipse(
-            [px - r, py - r, px + r, py + r],
-            fill=c,
-            outline="white",
-            width=2,
-        )
-
-      # 3. 측정 선 긋기
-      for pair_idx in range(len(pts) // 2):
-        p1 = pts[pair_idx * 2]
-        p2 = pts[pair_idx * 2 + 1]
-        c = colors[pair_idx]
-        draw.line([p1[1], p1[2], p2[1], p2[2]], fill=c, width=3)
+      # 랜드마크와 선이 그려진 이미지 생성
+      display_img = draw_landmarks_on_image(
+          img_resized, lm_coords, st.session_state.points
+      )
 
       st.markdown(
           "👇 **얼굴에 표시된 하얀색 랜드마크 점 위를 마우스로 클릭하세요**"
-          " (가장 가까운 랜드마크에 자동으로 스냅됩니다)"
+          " (가장 가까운 점에 자동으로 스냅됩니다)"
       )
 
-      # 클릭 감지 컴포넌트
+      # 클릭 감지 및 스냅 로직
       value = streamlit_image_coordinates(
-          draw_img, key=f"img_click_{selected_tag}_{len(pts)}"
+          display_img, key=f"img_click_{selected_tag}_{len(st.session_state.points)}"
       )
 
       if value is not None and len(lm_coords) > 0:
         click_x, click_y = value["x"], value["y"]
 
-        # 가장 가까운 dlib 랜드마크 찾기 (스냅 기능)
         closest_idx = -1
         min_dist = float("inf")
         for idx, (lx, ly) in enumerate(lm_coords):
@@ -266,13 +298,14 @@ with tab1:
             min_dist = d
             closest_idx = idx
 
-        # 40픽셀 이내의 점을 클릭했을 때만 인정
+        # 40픽셀 이내의 하얀 점을 클릭했을 때만 스냅 적용
         if min_dist <= 40 and closest_idx != -1:
-          selected_pt = lm_coords[closest_idx]
+          selected_point = lm_coords[closest_idx]
+          pts = st.session_state.points
           # 중복 클릭 방지
           if not pts or pts[-1][0] != closest_idx:
             if len(pts) < 6:
-              pts.append((closest_idx, selected_pt[0], selected_pt[1]))
+              pts.append((closest_idx, selected_point[0], selected_point[1]))
               st.session_state.points = pts
               st.rerun()
     else:
@@ -303,7 +336,7 @@ with tab2:
   )
 
   edited_df = st.data_editor(
-      default_df, num_rows="dynamic", use_container_width=True, key="coord_table"
+      default_df, num_rows="dynamic", width="stretch", key="coord_table"
   )
 
   if st.button("🚀 3차원 공간 시각화 실행", type="primary"):
@@ -352,6 +385,6 @@ with tab2:
           ),
           margin=dict(l=0, r=0, b=0, t=40),
       )
-      st.plotly_chart(fig, use_container_width=True)
+      st.plotly_chart(fig, width="stretch")
     except Exception as e:
       st.error(f"시각화 중 오류 발생: {e}")
